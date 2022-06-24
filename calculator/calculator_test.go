@@ -1,0 +1,226 @@
+package calculator
+
+import (
+	"fmt"
+	"lz/model"
+	"runtime"
+	"testing"
+	"time"
+)
+
+func TestCalculator1(t *testing.T) {
+	runtime.GOMAXPROCS(12)
+	calculator := NewCalculatorWithArrDeque(newExecutorBaseOnBlock(0))
+	calculator.castingMachine = NewCastingMachine()
+	calculator.GetCastingMachine().SetCoolerConfig(model.Env{
+		StartTemperature: 1600.0,
+		Md: model.Md{
+			NarrowSurfaceIn:  20.0,
+			NarrowSurfaceOut: 38.0,
+			WideSurfaceIn:    20.0,
+			WideSurfaceOut:   38.0,
+		},
+	}, []byte{})
+	calculator.steel1 = NewSteel(1, calculator.castingMachine)
+	fmt.Println(calculator.castingMachine.CoolerConfig.StartTemperature)
+	calculator.runningState = stateRunning
+	calculator.Calculate()
+}
+
+func TestCalculator2(t *testing.T) {
+	runtime.GOMAXPROCS(12)
+	ZLength = 31860
+	Length = 1260.0 / 2
+	Width = 230.0 / 2
+	calculator := NewCalculatorWithArrDeque(nil)
+	calculator.castingMachine = NewCastingMachine()
+	calculator.GetCastingMachine().SetCoolerConfig(model.Env{
+		StartTemperature: 1530.0,
+		Md: model.Md{
+			NarrowSurfaceIn:     30.0,
+			NarrowSurfaceOut:    38.0,
+			NarrowSurfaceVolume: 540,
+			WideSurfaceIn:       30.0,
+			WideSurfaceOut:      38.0,
+			WideSurfaceVolume:   3000,
+		},
+	},  []byte{})
+	calculator.castingMachine.SetV(1.5)
+	calculator.castingMachine.SetFromJson(model.Coordinate{
+		MdLength: 950,
+	})
+	calculator.steel1 = NewSteel(1, calculator.castingMachine)
+	fmt.Println(calculator.castingMachine.CoolerConfig.StartTemperature)
+	calculator.runningState = stateRunning
+	//calculator.Calculate(
+	calculator.TestCalculateQ()
+
+}
+
+func TestCalculateTimeStep(t *testing.T) {
+	calculator := NewCalculatorWithArrDeque(nil)
+	calculator.calculateTimeStep()
+}
+
+func TestCalculatorExecutor(t *testing.T) {
+	ZLength = 31860
+	Length = 1260.0 / 2
+	Width = 230.0 / 2
+	calculator := NewCalculatorWithArrDeque(nil)
+	for z := 0; z < 1; z++ {
+		calculator.thermalField.AddFirst(0)
+		calculator.thermalField1.AddFirst(0)
+	}
+	count := 0
+	calculator.Field.TraverseSpirally(0, 1, func(z int, item *model.ItemType) {
+		// 跳过为空的切片， 即值为-1
+		if item[0][0] == -1 {
+			return
+		}
+		left, right, top, bottom := 0, Length/XStep-1, 0, Width/YStep-1 // 每个切片迭代时需要重置
+		// 计算最外层， 逆时针
+		{
+			// 1. 三个顶点，左下方顶点仅当其外一层温度不是初始温度时才开始计算
+			//item[0][Length/XStep-1] = 1
+			//item[Width/YStep-1][Length/XStep-1] = 1
+			//item[Width/YStep-1][0] = 1
+			count += 3
+			for row := top + 1; row < bottom; row++ {
+				// [row][right]
+				//item[row][Length/XStep-1] = 1
+				count++
+			}
+			for column := right - 1; column > left; column-- {
+				// [bottom][column]
+				//item[Width/YStep-1][column] = 1
+				count++
+			}
+			right--
+			bottom--
+		}
+
+		{
+			// 逆时针螺旋遍历
+			for left <= right && top <= bottom {
+				//if item[0][right] != item[0][right+1] ||
+				//	item[0][right] != item[0][right-1] ||
+				//	item[0][right] != item[1][right] {
+				//	item[0][right] = 1
+				//	count++
+				//}
+				//item[0][right] = 1
+				count++
+				for row := top + 1; row <= bottom; row++ {
+					// [row][right]
+					//if item[row][right] != item[row][right+1] ||
+					//	item[row][right] != item[row][right-1] ||
+					//	item[row][right] != item[row+1][right] ||
+					//	item[row][right] != item[row-1][right] {
+					//	item[row][right] = 1
+					//	count++
+					//}
+					//item[row][right] = 1
+					count++
+				}
+				if left < right && top < bottom {
+					for column := right - 1; column > left; column-- {
+						// [bottom][column]
+						//if item[bottom][column] != item[bottom][column+1] ||
+						//	item[bottom][column] != item[bottom][column-1] ||
+						//	item[bottom][column] != item[bottom+1][column] ||
+						//	item[bottom][column] != item[bottom-1][column] {
+						//	item[bottom][column] = 1
+						//	count++
+						//}
+						//item[bottom][column] = 1
+						count++
+						//if item[bottom][0] == item[bottom+1][0] ||
+						//	item[bottom][0] == item[bottom-1][0] ||
+						//	item[bottom][0] == item[bottom][1] {
+						//	item[bottom][0] = 1
+						//	count++
+						//}
+					}
+					//item[bottom][0] = 1
+					count++
+				}
+				if top == bottom {
+					//if item[0][0] != item[0][1] || item[0][0] != item[1][0] {
+					//	item[0][0] = 1
+					//	count++
+					//}
+					//item[0][0] = 1
+					count++
+					for column := right - 1; column > left; column-- {
+						//if item[0][column] != item[0][column+1] ||
+						//	item[0][column] != item[0][column-1] ||
+						//	item[0][column] != item[1][column] {
+						//	item[0][column] = 1
+						//	count++
+						//}
+						//item[0][column] = 1
+						count++
+					}
+				}
+				right--
+				bottom--
+			}
+		}
+	})
+	if !calculator.Field.IsEmpty() {
+		for i := Width/YStep - 1; i >= 0; i-- {
+			for j := 0; j <= Length/XStep-1; j++ {
+				fmt.Printf("%.2f ", calculator.Field.Get(calculator.Field.Size()-1, i, j))
+			}
+			fmt.Println()
+		}
+	}
+	fmt.Println("计算的点数: ", count, "实际需要遍历的点数: ", Width/YStep*Length/XStep)
+}
+
+// 测试用
+func (c *calculatorWithArrDeque) Calculate() {
+	for z := 0; z < 1; z++ {
+		c.thermalField.AddFirst(c.castingMachine.CoolerConfig.StartTemperature)
+		c.thermalField1.AddFirst(c.castingMachine.CoolerConfig.StartTemperature)
+	}
+
+	start := time.Now()
+	for count := 0; count < 10; count++ {
+		deltaT, _ := c.calculateTimeStep()
+		c.calculateQOffline()
+		c.calculateHeffOnlineAtMd()
+		fmt.Println(c.steel1.Parameter.Q[0][:Length/XStep+Width/YStep])
+		fmt.Println(c.steel1.Parameter.Heff[0][:Length/XStep+Width/YStep])
+		cost := c.e.dispatchTask(deltaT, 0, c.Field.Size())
+
+		if c.alternating {
+			c.Field = c.thermalField1
+		} else {
+			c.Field = c.thermalField
+		}
+
+		for i := Width/YStep - 1; i > Width/YStep-6; i-- {
+			for j := Length/XStep - 5; j <= Length/XStep-1; j++ {
+				fmt.Printf("%.4f ", float64(c.Field.Get(c.Field.Size()-1, i, j)))
+			}
+			fmt.Print(i)
+			fmt.Println()
+		}
+		c.alternating = !c.alternating
+		fmt.Println("单此计算时间：", cost.Milliseconds())
+	}
+
+	fmt.Println("arr deque 总共消耗时间：", time.Since(start), "平均消耗时间: ", time.Since(start)/100)
+
+	// 一个核心计算
+	//c.CalculateSerially()
+}
+
+func (c *calculatorWithArrDeque) TestCalculateQ() {
+	for z := 0; z < 1; z++ {
+		c.thermalField.AddFirst(c.castingMachine.CoolerConfig.StartTemperature)
+		c.thermalField1.AddFirst(c.castingMachine.CoolerConfig.StartTemperature)
+	}
+	c.calculateQOffline()
+}
