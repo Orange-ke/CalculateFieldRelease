@@ -150,11 +150,12 @@ func (c *calculatorWithArrDeque) BuildData() *TemperatureFieldData {
 
 // 横切面推送数据
 type SliceInfo struct {
-	HorizontalSolidThickness  int         `json:"horizontal_solid_thickness"`
-	VerticalSolidThickness    int         `json:"vertical_solid_thickness"`
-	HorizontalLiquidThickness int         `json:"horizontal_liquid_thickness"`
-	VerticalLiquidThickness   int         `json:"vertical_liquid_thickness"`
+	HorizontalSolidThickness  float32     `json:"horizontal_solid_thickness"`
+	VerticalSolidThickness    float32     `json:"vertical_solid_thickness"`
+	HorizontalLiquidThickness float32     `json:"horizontal_liquid_thickness"`
+	VerticalLiquidThickness   float32     `json:"vertical_liquid_thickness"`
 	Slice                     [][]float32 `json:"slice"`
+	Length                    int         `json:"length"`
 }
 
 func (c *calculatorWithArrDeque) GenerateSLiceInfo(index int) *SliceInfo {
@@ -194,27 +195,62 @@ func (c *calculatorWithArrDeque) buildSliceGenerateData(index int) *SliceInfo {
 	sliceInfo.Slice = slice
 	length := Length/XStep - 1
 	width := Width/YStep - 1
-	for i := length; i >= 0; i-- {
-		if originData[0][i] <= solidTemp {
-			sliceInfo.HorizontalSolidThickness = XStep * (length - i + 1)
+	// 宽面
+	j := width
+	for j = width; j >= 0; j-- {
+		if originData[j][0] > solidTemp {
+			break
 		}
 	}
-	for i := length; i >= 0; i-- {
-		if originData[0][i] <= liquidTemp {
-			sliceInfo.HorizontalLiquidThickness = XStep * (length - i + 1)
+	if j == width {
+		sliceInfo.VerticalSolidThickness = 0
+	} else if j < 0 {
+		sliceInfo.VerticalSolidThickness = float32(Width)
+	} else {
+		sliceInfo.VerticalSolidThickness = float32(YStep*(width-j)) + float32(YStep)*(c.steel1.SolidPhaseTemperature-originData[j+1][0])/(originData[j][0]-originData[j+1][0])
+	}
+	for j = width; j >= 0; j-- {
+		if originData[j][0] > liquidTemp {
+			break
 		}
+	}
+	if j == width {
+		sliceInfo.VerticalSolidThickness = 0
+	} else if j < 0 {
+		sliceInfo.VerticalLiquidThickness = float32(Width)
+	} else {
+		sliceInfo.VerticalLiquidThickness = float32(YStep*(width-j)) + float32(YStep)*(c.steel1.LiquidPhaseTemperature-originData[j+1][0])/(originData[j][0]-originData[j+1][0])
+	}
+	// 窄面
+	i := length
+	for i = length; i >= 0; i-- {
+		if originData[0][i] > solidTemp {
+			break
+		}
+	}
+	if i == length {
+		sliceInfo.HorizontalSolidThickness = 0
+	} else if i < 0 || sliceInfo.VerticalSolidThickness == float32(Width)  {
+		sliceInfo.HorizontalSolidThickness = float32(Length)
+	} else {
+		sliceInfo.HorizontalSolidThickness = float32(XStep*(length-i)) + float32(XStep)*(c.steel1.SolidPhaseTemperature-originData[0][i+1])/(originData[0][i]-originData[0][i+1])
+	}
+	i = length
+	for i = length; i >= 0; i-- {
+		if originData[0][i] > liquidTemp {
+			break
+		}
+	}
+	if i == length {
+		sliceInfo.HorizontalLiquidThickness = 0
+	} else if i < 0 || sliceInfo.VerticalLiquidThickness == float32(Width) {
+		sliceInfo.HorizontalLiquidThickness = float32(Length)
+	} else {
+		sliceInfo.HorizontalLiquidThickness = float32(XStep*(length-i)) + float32(XStep)*(c.steel1.LiquidPhaseTemperature-originData[0][i+1])/(originData[0][i]-originData[0][i+1])
 	}
 
-	for j := width; j >= 0; j-- {
-		if originData[j][0] <= solidTemp {
-			sliceInfo.VerticalSolidThickness = YStep * (width - j + 1)
-		}
-	}
-	for j := width; j >= 0; j-- {
-		if originData[j][0] <= liquidTemp {
-			sliceInfo.VerticalLiquidThickness = YStep * (width - j + 1)
-		}
-	}
+
+	sliceInfo.Length = c.Field.Size()
 	return sliceInfo
 }
 
@@ -256,8 +292,8 @@ func (c *calculatorWithArrDeque) GenerateVerticalSlice1Data() *VerticalSliceData
 type VerticalSliceData2 struct {
 	Length        int         `json:"length"`
 	VerticalSlice [][]float32 `json:"vertical_slice"`
-	Solid         []int       `json:"solid"`
-	Liquid        []int       `json:"liquid"`
+	Solid         []float32   `json:"solid"`
+	Liquid        []float32   `json:"liquid"`
 	SolidJoin     Join        `json:"solid_join"`
 	LiquidJoin    Join        `json:"liquid_join"`
 }
@@ -276,8 +312,8 @@ func (c *calculatorWithArrDeque) GenerateVerticalSlice2Data(reqData model.Vertic
 	res := &VerticalSliceData2{
 		Length:        c.Field.Size(),
 		VerticalSlice: make([][]float32, c.Field.Size()/zScale),
-		Solid:         make([]int, c.Field.Size()),
-		Liquid:        make([]int, c.Field.Size()),
+		Solid:         make([]float32, c.Field.Size()),
+		Liquid:        make([]float32, c.Field.Size()),
 	}
 
 	for i := 0; i < len(res.VerticalSlice); i++ {
@@ -300,34 +336,46 @@ func (c *calculatorWithArrDeque) GenerateVerticalSlice2Data(reqData model.Vertic
 			step = 0
 			zIndex++
 		}
-		for i := 0; i < Width/YStep; i++ {
+		i := Width/YStep - 1
+		for i = Width/YStep - 1; i >= 0; i-- {
 			temp = item[i][Length/XStep-1-index]
-			if temp <= solidTemp {
-				res.Solid[z] = Width/YStep - i
-				if res.Solid[z] == Width/YStep && !solidJoinSet {
-					res.SolidJoin.IsJoin = true
-					res.SolidJoin.JoinIndex = z
-					solidJoinSet = true
-				}
+			if temp > solidTemp {
 				break
-			} else {
-				res.Solid[z] = 0
 			}
 		}
+		if i == Width/YStep-1 {
+			res.Solid[z] = 0
+		} else if i < 0 {
+			res.Solid[z] = float32(Width / YStep)
+		} else {
+			res.Solid[z] = float32(Width/YStep-1-i) + (solidTemp-item[i+1][Length/XStep-1-index])/(item[i][Length/XStep-1-index]-item[i+1][Length/XStep-1-index])
+		}
+		if res.Solid[z] >= float32(Width/YStep) && !solidJoinSet {
+			res.Solid[z] = float32(Width / YStep)
+			res.SolidJoin.IsJoin = true
+			res.SolidJoin.JoinIndex = z
+			solidJoinSet = true
+		}
 
-		for i := 0; i < Width/YStep; i++ {
+		i = Width/YStep - 1
+		for i = Width/YStep - 1; i >= 0; i-- {
 			temp = item[i][Length/XStep-1-index]
-			if temp <= liquidTemp {
-				res.Liquid[z] = Width/YStep - i
-				if res.Liquid[z] == Width/YStep && !liquidJoinSet {
-					res.LiquidJoin.IsJoin = true
-					res.LiquidJoin.JoinIndex = z
-					liquidJoinSet = true
-				}
+			if temp > liquidTemp {
 				break
-			} else {
-				res.Liquid[z] = 0
 			}
+		}
+		if i == Width/YStep-1 {
+			res.Liquid[z] = 0
+		} else if i < 0 {
+			res.Liquid[z] = float32(Width / YStep)
+		} else {
+			res.Liquid[z] = float32(Width/YStep-1-i) + (liquidTemp-item[i+1][Length/XStep-1-index])/(item[i][Length/XStep-1-index]-item[i+1][Length/XStep-1-index])
+		}
+		if res.Liquid[z] >= float32(Width/YStep) && !liquidJoinSet {
+			res.Liquid[z] = float32(Width / YStep)
+			res.LiquidJoin.IsJoin = true
+			res.LiquidJoin.JoinIndex = z
+			liquidJoinSet = true
 		}
 	}, 0, c.Field.Size())
 	return res

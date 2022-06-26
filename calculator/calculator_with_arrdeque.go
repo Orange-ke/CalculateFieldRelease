@@ -13,6 +13,8 @@ const (
 	stateRunning             = 1
 	stateSuspended           = 2
 	stateRunningWithTwoSteel = 3 // 存在两种钢种
+
+	envTemp = 70.0 // 环境温度
 )
 
 var (
@@ -189,7 +191,7 @@ func (c *calculatorWithArrDeque) calculateQOffline() {
 	if c.runningState == stateRunning {
 		averageTemp := (c.castingMachine.CoolerConfig.WideSurfaceIn + c.castingMachine.CoolerConfig.WideSurfaceOut) / 2
 		c.Field.Traverse(func(z int, item *model.ItemType) {
-			initialQ := 1 / (ROfWater(3000.0, 0.005, float64(averageTemp)) + ROfCu() + 1/2220.0) * (item[Width/YStep-1][0] - averageTemp)
+			initialQ := 1 / (ROfWater(float64(c.castingMachine.CoolerConfig.WideWaterVolume), 0.005, float64(averageTemp)) + ROfCu() + 1/2220.0) * (item[Width/YStep-1][0] - averageTemp)
 			j := 0
 			for ; j < Length/XStep; j++ {
 				if item[Width/YStep-1][j] > c.steel1.LiquidPhaseTemperature {
@@ -225,7 +227,7 @@ func (c *calculatorWithArrDeque) calculateWideSurfaceEnergy(wideSurfaceH float32
 	var initialQ float32
 	averageTemp := (c.castingMachine.CoolerConfig.WideSurfaceIn + c.castingMachine.CoolerConfig.WideSurfaceOut) / 2
 	c.Field.Traverse(func(z int, item *model.ItemType) {
-		initialQ = 1 / (ROfWater(3000.0, 0.005, float64(averageTemp)) + ROfCu() + 1/wideSurfaceH) * (item[Width/YStep-1][0] - averageTemp)
+		initialQ = 1 / (ROfWater(float64(c.castingMachine.CoolerConfig.WideWaterVolume), 0.005, float64(averageTemp)) + ROfCu() + 1/wideSurfaceH) * (item[Width/YStep-1][0] - averageTemp)
 		j := 0
 		for ; j < Length/XStep; j++ {
 			if item[0][j] > c.steel1.LiquidPhaseTemperature {
@@ -250,7 +252,7 @@ func (c *calculatorWithArrDeque) calculateNarrowSurfaceEnergy(narrowSurfaceH flo
 	var initialQ float32
 	averageTemp := (c.castingMachine.CoolerConfig.NarrowSurfaceIn + c.castingMachine.CoolerConfig.NarrowSurfaceOut) / 2
 	c.Field.Traverse(func(z int, item *model.ItemType) {
-		initialQ = 1 / (ROfWater(3000.0, 0.005, float64(averageTemp)) + ROfCu() + 1/narrowSurfaceH) * (item[0][Length/XStep-1] - averageTemp)
+		initialQ = 1 / (ROfWater(float64(c.castingMachine.CoolerConfig.NarrowWaterVolume), 0.005, float64(averageTemp)) + ROfCu() + 1/narrowSurfaceH) * (item[0][Length/XStep-1] - averageTemp)
 		i := 0
 		for ; i < Width/YStep; i++ {
 			if item[i][0] > c.steel1.LiquidPhaseTemperature {
@@ -345,7 +347,6 @@ func (c *calculatorWithArrDeque) calculateHeffOnlineAtSecondaryCoolingZone() {
 	wideItems := c.castingMachine.CoolerConfig.SecondaryCoolingZoneCfg.NozzleCfg.WideItems
 	coolingZoneCfg := c.castingMachine.CoolerConfig.SecondaryCoolingZoneCfg.CoolingZoneCfg
 	cooingWaterCfg := c.castingMachine.CoolerConfig.SecondaryCoolingZoneCfg.SecondaryCoolingWaterCfg
-	var envTemp = 70.0
 	var L, AB, BC, CD, DE, Ds, sprayWidth, Hbr float32
 	var Deformation, centerRollersDistance, v, Si_1, Tm, Tma, S, Volume, T, R0, Ts_ float64
 	var preDistance = float32(c.castingMachine.Coordinate.MdLength) - c.castingMachine.Coordinate.LevelHeight
@@ -486,14 +487,30 @@ func (c *calculatorWithArrDeque) calculateHeffOnlineAtSecondaryCoolingZone() {
 // 计算在线二冷区的热流密度
 func (c *calculatorWithArrDeque) calculateQOnlineAtSecondaryCoolingZone() {
 	start := time.Now()
-	wideAverageTemp := (c.castingMachine.CoolerConfig.WideSurfaceIn + c.castingMachine.CoolerConfig.WideSurfaceOut) / 2
-	narrowAverageTemp := (c.castingMachine.CoolerConfig.NarrowSurfaceIn + c.castingMachine.CoolerConfig.NarrowSurfaceOut) / 2
+	// 喷淋水温度默认一样，直接区第一个冷却区的喷淋水温度
+	var minusTemp float32
+	var zone int
+	secondaryCoolingWaterCfg := c.castingMachine.CoolerConfig.SecondaryCoolingZoneCfg.SecondaryCoolingWaterCfg
 	c.Field.Traverse(func(z int, item *model.ItemType) {
+		zone = c.castingMachine.WhichZone(z)
+		if zone == 0 {
+			return
+		}
+		if secondaryCoolingWaterCfg[zone-1].InnerArcWaterVolume != 0.0 {
+			minusTemp = secondaryCoolingWaterCfg[zone - 1].SprayWaterTemperature
+		} else {
+			minusTemp = envTemp
+		}
 		for j := 0; j < Length/XStep; j++ {
-			c.steel1.Parameter.Q[z][j] = c.steel1.Parameter.Heff[z][j] * (item[Width/YStep-1][j] - wideAverageTemp)
+			c.steel1.Parameter.Q[z][j] = c.steel1.Parameter.Heff[z][j] * (item[Width/YStep-1][j] - minusTemp)
+		}
+		if secondaryCoolingWaterCfg[zone-1].NarrowSideWaterVolume != 0.0 {
+			minusTemp = secondaryCoolingWaterCfg[zone - 1].SprayWaterTemperature
+		} else {
+			minusTemp = envTemp
 		}
 		for i := 0; i < Width/YStep; i++ {
-			c.steel1.Parameter.Q[z][Length/XStep+i] = c.steel1.Parameter.Heff[z][Length/XStep+i] * (item[i][Length/XStep-1] - narrowAverageTemp)
+			c.steel1.Parameter.Q[z][Length/XStep+i] = c.steel1.Parameter.Heff[z][Length/XStep+i] * (item[i][Length/XStep-1] - minusTemp)
 		}
 	}, (c.castingMachine.Coordinate.MdLength-int(c.castingMachine.Coordinate.LevelHeight))/ZStep, c.Field.Size())
 	log.Debug("计算综合换热系数所需时间：", time.Since(start).Milliseconds())
@@ -602,12 +619,14 @@ func (c *calculatorWithArrDeque) calculateSolidThickness(distance float32, pos s
 func (c *calculatorWithArrDeque) calculateHeffOnlineAtMd() {
 	start := time.Now()
 	if c.runningState == stateRunning {
+		wideAverageTemp := (c.castingMachine.CoolerConfig.WideSurfaceIn + c.castingMachine.CoolerConfig.WideSurfaceOut) / 2
+		narrowAverageTemp := (c.castingMachine.CoolerConfig.NarrowSurfaceIn + c.castingMachine.CoolerConfig.NarrowSurfaceOut) / 2
 		c.Field.Traverse(func(z int, item *model.ItemType) {
 			for j := 0; j < Length/XStep; j++ {
-				c.steel1.Parameter.Heff[z][j] = c.steel1.Parameter.Q[z][j] / (item[Width/YStep-1][j] - c.castingMachine.CoolerConfig.WideSurfaceIn)
+				c.steel1.Parameter.Heff[z][j] = c.steel1.Parameter.Q[z][j] / (item[Width/YStep-1][j] - wideAverageTemp)
 			}
 			for i := 0; i < Width/YStep; i++ {
-				c.steel1.Parameter.Heff[z][Length/XStep+i] = c.steel1.Parameter.Q[z][Length/XStep+i] / (item[i][Length/XStep-1] - c.castingMachine.CoolerConfig.NarrowSurfaceIn)
+				c.steel1.Parameter.Heff[z][Length/XStep+i] = c.steel1.Parameter.Q[z][Length/XStep+i] / (item[i][Length/XStep-1] - narrowAverageTemp)
 			}
 		}, 0, (c.castingMachine.Coordinate.MdLength-int(c.castingMachine.Coordinate.LevelHeight))/ZStep)
 	}

@@ -216,7 +216,7 @@ func abs(x float32) float32 {
 
 // 计算流速
 func CalculateVwt(q, s float64) float64 {
-	return 3000.0 / 1000.0 / 60.0 / s
+	return q / 1000.0 / 60.0 / s
 }
 
 // 32.22摄氏度

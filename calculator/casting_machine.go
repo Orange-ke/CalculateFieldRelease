@@ -133,13 +133,13 @@ func (c *CastingMachine) SetWideSurfaceOut(wideSurfaceOut float32) {
 
 // 获取在那个冷却区
 func (c *CastingMachine) WhichZone(z int) int {
-	z = z * model.ZStep / StepZ // stepZ代表Z方向的缩放比例
-	if z <= c.Coordinate.MdLength {
+	pos := float32(z * model.ZStep)
+	if pos <= float32(c.Coordinate.MdLength) - c.Coordinate.LevelHeight {
 		return Zone0
 	}
 	coolingZoneCfg := c.CoolerConfig.SecondaryCoolingZoneCfg.CoolingZoneCfg
 	for i, v := range coolingZoneCfg {
-		if float32(z) <= v.EndDistance {
+		if pos <= v.EndDistance {
 			return i + 1
 		}
 	}
