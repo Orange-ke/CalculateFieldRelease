@@ -37,6 +37,7 @@ type Hub struct {
 
 	generateVerticalSlice1 chan struct{}
 	generateVerticalSlice2 chan model.VerticalReqData
+	generateShellCurves    chan struct{}
 
 	mu sync.Mutex
 }
@@ -58,6 +59,7 @@ func NewHub() *Hub {
 
 		generateVerticalSlice1: make(chan struct{}, 10),
 		generateVerticalSlice2: make(chan model.VerticalReqData, 10),
+		generateShellCurves:    make(chan struct{}, 10),
 	}
 }
 
@@ -252,6 +254,23 @@ func (h *Hub) handleResponse() {
 			if err != nil {
 				log.WithField("err", err).Error("发送纵向切片2推送消息失败")
 			}
+		case <-h.generateShellCurves:
+			reply := model.Msg{
+				Type: "shell_curves_generated",
+			}
+			shellCurvesData := h.c.GenerateShellCurves()
+			data, err := json.Marshal(shellCurvesData)
+			if err != nil {
+				log.WithField("err", err).Error("坯壳厚度推送数据json解析失败")
+				return
+			}
+			reply.Content = string(data)
+			h.mu.Lock()
+			err = h.conn.WriteJSON(&reply)
+			h.mu.Unlock()
+			if err != nil {
+				log.WithField("err", err).Error("发送坯壳厚度推送消息失败")
+			}
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -352,6 +371,9 @@ func (h *Hub) handleRequest() {
 					break
 				}
 				h.generateVerticalSlice2 <- reqData
+			case "generate_shell_curves":
+				log.Info("获取到生成坯壳厚度变化曲线的信号")
+				h.generateShellCurves <- struct{}{}
 			default:
 				log.Warn("no such type")
 			}

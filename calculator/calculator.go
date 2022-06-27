@@ -28,4 +28,6 @@ type Calculator interface {
 	GenerateVerticalSlice1Data() *VerticalSliceData1
 	// 纵切面云图
 	GenerateVerticalSlice2Data(reqData model.VerticalReqData) *VerticalSliceData2
+	// 坯壳厚度变化数据
+	GenerateShellCurves() *ShellCurvesData
 }

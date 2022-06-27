@@ -215,7 +215,7 @@ func (c *calculatorWithArrDeque) buildSliceGenerateData(index int) *SliceInfo {
 		}
 	}
 	if j == width {
-		sliceInfo.VerticalSolidThickness = 0
+		sliceInfo.VerticalLiquidThickness = 0
 	} else if j < 0 {
 		sliceInfo.VerticalLiquidThickness = float32(Width)
 	} else {
@@ -230,7 +230,7 @@ func (c *calculatorWithArrDeque) buildSliceGenerateData(index int) *SliceInfo {
 	}
 	if i == length {
 		sliceInfo.HorizontalSolidThickness = 0
-	} else if i < 0 || sliceInfo.VerticalSolidThickness == float32(Width)  {
+	} else if i < 0 || sliceInfo.VerticalSolidThickness == float32(Width) {
 		sliceInfo.HorizontalSolidThickness = float32(Length)
 	} else {
 		sliceInfo.HorizontalSolidThickness = float32(XStep*(length-i)) + float32(XStep)*(c.steel1.SolidPhaseTemperature-originData[0][i+1])/(originData[0][i]-originData[0][i+1])
@@ -248,7 +248,6 @@ func (c *calculatorWithArrDeque) buildSliceGenerateData(index int) *SliceInfo {
 	} else {
 		sliceInfo.HorizontalLiquidThickness = float32(XStep*(length-i)) + float32(XStep)*(c.steel1.LiquidPhaseTemperature-originData[0][i+1])/(originData[0][i]-originData[0][i+1])
 	}
-
 
 	sliceInfo.Length = c.Field.Size()
 	return sliceInfo
@@ -376,6 +375,97 @@ func (c *calculatorWithArrDeque) GenerateVerticalSlice2Data(reqData model.Vertic
 			res.LiquidJoin.IsJoin = true
 			res.LiquidJoin.JoinIndex = z
 			liquidJoinSet = true
+		}
+	}, 0, c.Field.Size())
+	return res
+}
+
+// 坯壳厚度变化数据
+type ShellCurvesData struct {
+	WideShellWidth    [][2]float32 `json:"wide_shell_width"`
+	WideLiquidWidth   [][2]float32 `json:"wide_liquid_width"`
+	NarrowShellWidth  [][2]float32 `json:"narrow_shell_width"`
+	NarrowLiquidWidth [][2]float32 `json:"narrow_liquid_width"`
+}
+
+func (c *calculatorWithArrDeque) GenerateShellCurves() *ShellCurvesData {
+	solidTemp := c.steel1.SolidPhaseTemperature
+	liquidTemp := c.steel1.LiquidPhaseTemperature
+	var VerticalSolidThickness, VerticalLiquidThickness, HorizontalSolidThickness, HorizontalLiquidThickness float32
+	res := &ShellCurvesData{
+		WideShellWidth:    make([][2]float32, 0),
+		WideLiquidWidth:   make([][2]float32, 0),
+		NarrowShellWidth:  make([][2]float32, 0),
+		NarrowLiquidWidth: make([][2]float32, 0),
+	}
+	step := 0
+	c.Field.Traverse(func(z int, item *model.ItemType) {
+		step++
+		if step == 5 {
+			originData := c.Field.GetSlice(z)
+			length := Length/XStep - 1
+			width := Width/YStep - 1
+			// 宽面
+			j := width
+			for j = width; j >= 0; j-- {
+				if originData[j][0] > solidTemp {
+					break
+				}
+			}
+			if j == width {
+				VerticalSolidThickness = 0
+			} else if j < 0 {
+				VerticalSolidThickness = float32(Width)
+			} else {
+				VerticalSolidThickness = float32(YStep*(width-j)) + float32(YStep)*(c.steel1.SolidPhaseTemperature-originData[j+1][0])/(originData[j][0]-originData[j+1][0])
+			}
+			for j = width; j >= 0; j-- {
+				if originData[j][0] > liquidTemp {
+					break
+				}
+			}
+			if j == width {
+				VerticalLiquidThickness = 0
+			} else if j < 0 {
+				VerticalLiquidThickness = float32(Width)
+			} else {
+				VerticalLiquidThickness = float32(YStep*(width-j)) + float32(YStep)*(c.steel1.LiquidPhaseTemperature-originData[j+1][0])/(originData[j][0]-originData[j+1][0])
+			}
+			// 窄面
+			i := length
+			for i = length; i >= 0; i-- {
+				if originData[0][i] > solidTemp {
+					break
+				}
+			}
+			if i == length {
+				HorizontalSolidThickness = 0
+			} else if i < 0 || VerticalSolidThickness == float32(Width) {
+				HorizontalSolidThickness = float32(Length)
+			} else {
+				HorizontalSolidThickness = float32(XStep*(length-i)) + float32(XStep)*(c.steel1.SolidPhaseTemperature-originData[0][i+1])/(originData[0][i]-originData[0][i+1])
+			}
+			i = length
+			for i = length; i >= 0; i-- {
+				if originData[0][i] > liquidTemp {
+					break
+				}
+			}
+			if i == length {
+				HorizontalLiquidThickness = 0
+			} else if i < 0 || VerticalLiquidThickness == float32(Width) {
+				HorizontalLiquidThickness = float32(Length)
+			} else {
+				HorizontalLiquidThickness = float32(XStep*(length-i)) + float32(XStep)*(c.steel1.LiquidPhaseTemperature-originData[0][i+1])/(originData[0][i]-originData[0][i+1])
+			}
+
+			res.WideShellWidth = append(res.WideShellWidth, [2]float32{float32((z + 1) * model.ZStep), VerticalSolidThickness})
+			res.WideLiquidWidth = append(res.WideLiquidWidth, [2]float32{float32((z + 1) * model.ZStep), VerticalLiquidThickness})
+
+			res.NarrowShellWidth = append(res.NarrowShellWidth, [2]float32{float32((z + 1) * model.ZStep), HorizontalSolidThickness})
+			res.NarrowLiquidWidth = append(res.NarrowLiquidWidth, [2]float32{float32((z + 1) * model.ZStep), HorizontalLiquidThickness})
+
+			step = 0
 		}
 	}, 0, c.Field.Size())
 	return res
